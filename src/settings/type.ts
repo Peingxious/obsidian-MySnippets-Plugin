@@ -4,6 +4,7 @@ export type EnhancedMenu = Menu & {
   dom: HTMLElement;
   items: EnhancedMenuItem[];
   setUseNativeMenu: Function;
+  close: Function;
 };
 
 export type EnhancedMenuItem = MenuItem & {

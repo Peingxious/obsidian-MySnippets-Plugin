@@ -63,8 +63,12 @@ export default class CreateSnippetModal extends Modal {
       let snippetPath = customCss.getSnippetPath(fileName);
       if (fileName) {
         if (!customCss.snippets.includes(fileName)) {
+          const snippetsFolder = customCss.getSnippetsFolder();
+          if (!(await app.vault.adapter.exists(snippetsFolder))) {
+            await app.vault.adapter.mkdir(snippetsFolder);
+          }
           await app.vault.create(
-            `${customCss.getSnippetsFolder()}/${fileName}.css`,
+            `${snippetsFolder}/${fileName}.css`,
             fileContents
           );
           console.log(`%c"${fileName}.css" has been created!`, "color: Violet");

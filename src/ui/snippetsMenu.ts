@@ -8,7 +8,7 @@ import { EnhancedApp, EnhancedMenu, EnhancedMenuItem } from "src/settings/type";
 export default function snippetsMenu(
   app: EnhancedApp,
   plugin: MySnippetsPlugin,
-  settings: MySnippetsSettings
+  settings: MySnippetsSettings,
 ) {
   const windowX = window.innerWidth;
   const windowY = window.innerHeight;
@@ -17,15 +17,68 @@ export default function snippetsMenu(
   if (!menuExists) {
     const menu = new Menu() as unknown as EnhancedMenu;
 
-    // menu.setUseNativeMenu(false);
+    menu.setUseNativeMenu(false);
 
     const menuDom = (menu as any).dom as HTMLElement;
     menuDom.addClass("MySnippets-statusbar-menu");
 
+    let isClosing = false;
+    let isMouseOverMenu = false;
+    let closeTimeout: any = null;
+
+    menuDom.addEventListener(
+      "mousedown",
+      (e) => {
+        e.stopPropagation();
+      },
+      true,
+    );
+    menuDom.addEventListener(
+      "click",
+      (e) => {
+        if (
+          e.target &&
+          ((e.target as HTMLElement).closest(".MS-OpenSnippet") ||
+            (e.target as HTMLElement).closest(".MS-DeleteSnippet") ||
+            (e.target as HTMLElement).closest(".MySnippetsButton"))
+        )
+          return;
+        e.stopPropagation();
+      },
+      true,
+    );
+    menuDom.addEventListener(
+      "mouseup",
+      (e) => {
+        e.stopPropagation();
+      },
+      true,
+    );
+
+    // Listen for mouseenter on the menu
+    menuDom.addEventListener("mouseenter", () => {
+      isMouseOverMenu = true;
+      if (closeTimeout) {
+        clearTimeout(closeTimeout);
+        closeTimeout = null;
+      }
+    });
+
+    // Listen for mouseleave on the menu, delay closing
+    menuDom.addEventListener("mouseleave", () => {
+      isMouseOverMenu = false;
+      closeTimeout = setTimeout(() => {
+        if (!isMouseOverMenu && !isClosing) {
+          isClosing = true;
+          menu.close();
+        }
+      }, 200);
+    });
+
     if (settings.aestheticStyle) {
       menuDom.setAttribute(
         "style",
-        "background-color: transparent; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);"
+        "background-color: transparent; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);",
       );
     }
     const customCss = app.customCss;
@@ -41,6 +94,7 @@ export default function snippetsMenu(
         const snippetElementDom = (snippetElement as any).dom as HTMLElement;
         const toggleComponent = new ToggleComponent(snippetElementDom);
         const buttonComponent = new ButtonComponent(snippetElementDom);
+        const deleteButton = new ButtonComponent(snippetElementDom);
 
         function changeSnippetStatus() {
           const isEnabled = customCss.enabledSnippets.has(snippet);
@@ -55,14 +109,40 @@ export default function snippetsMenu(
           .setIcon("ms-snippet")
           .setClass("MS-OpenSnippet")
           .setTooltip(`Open snippet`)
-
           .onClick((e: any) => {
             app.openWithDefaultApp(snippetPath);
+            e.stopPropagation();
           });
 
-        snippetElement.onClick((e: any) => {
-          e.preventDefault();
-          e.stopImmediatePropagation();
+        deleteButton
+          .setIcon("ms-delete")
+          .setClass("MS-DeleteSnippet")
+          .setTooltip("Delete snippet")
+          .onClick(async (e: any) => {
+            const filepath = `${customCss.getSnippetsFolder()}/${snippet}.css`;
+            try {
+              if (await app.vault.adapter.exists(filepath)) {
+                await app.vault.adapter.remove(filepath);
+                new Notice(`"${snippet}" deleted.`);
+                customCss.requestLoadSnippets();
+                menu.close();
+              }
+            } catch (error) {
+              new Notice("Error deleting snippet: " + error);
+              console.error(error);
+            }
+            e.stopPropagation();
+          });
+
+        snippetElementDom.addEventListener("click", (e: any) => {
+          const target = e.target as HTMLElement;
+          const isToggle = toggleComponent.toggleEl.contains(target);
+          const isButton = buttonComponent.buttonEl.contains(target);
+          const isDelete = deleteButton.buttonEl.contains(target);
+          if (!isToggle && !isButton && !isDelete) {
+            changeSnippetStatus();
+          }
+          e.stopPropagation();
         });
       });
     });
@@ -84,34 +164,56 @@ export default function snippetsMenu(
 
       reloadButton
         .setIcon("ms-reload")
-        .setClass("MySnippetsButton")
-        .setClass("MS-Reload")
         .setTooltip("Reload snippets")
         .onClick((e: any) => {
           customCss.requestLoadSnippets();
           new Notice("Snippets reloaded");
+          e.stopPropagation();
         });
+      reloadButton.buttonEl.addClass("MySnippetsButton");
+      reloadButton.buttonEl.addClass("MS-Reload");
+
       folderButton
         .setIcon("ms-folder")
-        .setClass("MySnippetsButton")
-        .setClass("MS-Folder")
         .setTooltip("Open snippets folder")
-        .onClick((e: any) => {
+        .onClick(async (e: any) => {
+          if (!(await app.vault.adapter.exists(snippetsFolder))) {
+            await app.vault.adapter.mkdir(snippetsFolder);
+          }
           app.openWithDefaultApp(snippetsFolder);
+          e.stopPropagation();
         });
+      folderButton.buttonEl.addClass("MySnippetsButton");
+      folderButton.buttonEl.addClass("MS-Folder");
+
       addButton
         .setIcon("ms-add")
-        .setClass("MySnippetsButton")
-        .setClass("MS-Folder")
         .setTooltip("Create new snippet")
         .onClick((e: any) => {
           new CreateSnippetModal(app, plugin).open();
+          e.stopPropagation();
         });
+      addButton.buttonEl.addClass("MySnippetsButton");
+      addButton.buttonEl.addClass("MS-Add");
     });
 
-    menu.showAtPosition({
-      x: windowX - 15,
-      y: windowY - 37,
-    });
+    const event = window.event as MouseEvent;
+    if (event) {
+      // @ts-ignore
+      if (menu.showAtMouseEvent) {
+        // @ts-ignore
+        menu.showAtMouseEvent(event);
+      } else {
+        menu.showAtPosition({
+          x: windowX - 15,
+          y: windowY - 37,
+        });
+      }
+    } else {
+      menu.showAtPosition({
+        x: windowX - 15,
+        y: windowY - 37,
+      });
+    }
   }
 }
